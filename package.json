@@ -1,0 +1,102 @@
+{
+  "name": "vscode-codex-audio-notifier",
+  "displayName": "Codex Audio Notifier",
+  "description": "Play a configurable sound and show a toast when Codex finishes a task in VS Code.",
+  "version": "0.0.2",
+  "publisher": "sunmax0731",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sunmax0731/vscode-codex-audio-notifier.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Sunmax0731/vscode-codex-audio-notifier/issues"
+  },
+  "homepage": "https://github.com/Sunmax0731/vscode-codex-audio-notifier#readme",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "codex",
+    "openai",
+    "vscode",
+    "notification",
+    "audio",
+    "toast"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:codexAudioNotifier.testSound"
+  ],
+  "main": "./dist/extension.js",
+  "files": [
+    "dist",
+    "media",
+    "README.md",
+    "LICENSE.txt",
+    "package.json"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "codexAudioNotifier.testSound",
+        "title": "Codex Audio Notifier: Test Sound"
+      },
+      {
+        "command": "codexAudioNotifier.enableTerminalBellSignal",
+        "title": "Codex Audio Notifier: Set Terminal Bell Signal to On"
+      }
+    ],
+    "configuration": {
+      "title": "Codex Audio Notifier",
+      "properties": {
+        "codexAudioNotifier.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable sound playback when Codex writes a task completion event."
+        },
+        "codexAudioNotifier.customSoundPath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "scope": "machine",
+          "ignoreSync": true,
+          "description": "Absolute path or workspace-relative path to a sound file that overrides the bundled default notification sound."
+        },
+        "codexAudioNotifier.watchAllVsCodeSessions": {
+          "type": "boolean",
+          "default": false,
+          "description": "Trigger notifications for any Codex VS Code session on this machine. When false, only sessions whose cwd matches the current window are used."
+        },
+        "codexAudioNotifier.showToastNotification": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a VS Code toast notification when Codex finishes a task."
+        },
+        "codexAudioNotifier.forceTerminalBellSignalOn": {
+          "type": "boolean",
+          "default": true,
+          "description": "Set accessibility.signals.terminalBell to on when the extension activates."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "clean": "powershell -NoProfile -Command \"Remove-Item -Recurse -Force dist,node_modules,package-lock.json -ErrorAction SilentlyContinue\"",
+    "build": "node ./node_modules/typescript/bin/tsc -p .",
+    "watch": "tsc -w -p .",
+    "vscode:prepublish": "node ./node_modules/typescript/bin/tsc -p .",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.6.2",
+    "@types/node": "^22.15.17",
+    "@types/vscode": "^1.96.0",
+    "typescript": "^5.8.3"
+  }
+}
