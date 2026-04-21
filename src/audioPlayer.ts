@@ -54,7 +54,7 @@ export class AudioPlayer {
     }
 
     if (trigger === 'test') {
-      void vscode.window.showInformationMessage('Codex Audio Notifier: played the configured sound.');
+      void vscode.window.showInformationMessage('Codex Audio Notifier: started playback of the configured sound.');
     }
   }
 
@@ -108,19 +108,27 @@ async function playOnWindows(soundPath: string): Promise<void> {
   const escapedPath = soundPath.replace(/'/g, "''");
   const script = [
     `$path = '${escapedPath}'`,
-    '$player = New-Object -ComObject WMPlayer.OCX.7',
-    '$player.settings.volume = 100',
-    '$player.URL = $path',
-    '$player.controls.play()',
-    '$deadline = (Get-Date).AddMinutes(5)',
-    'while ((Get-Date) -lt $deadline) {',
-    '  if ($player.playState -eq 1) { break }',
-    '  Start-Sleep -Milliseconds 200',
+    "$source = @'",
+    'using System;',
+    'using System.Runtime.InteropServices;',
+    'public static class WinMM {',
+    '  [DllImport("winmm.dll", CharSet = CharSet.Auto)]',
+    '  public static extern int mciSendString(string command, System.Text.StringBuilder buffer, int bufferSize, IntPtr hwndCallback);',
     '}',
-    '$player.close()',
-  ].join('; ');
+    "'@",
+    'Add-Type -TypeDefinition $source',
+    "$alias = 'codexnotify_' + [Guid]::NewGuid().ToString('N')",
+    '$openResult = [WinMM]::mciSendString("open `"$path`" type mpegvideo alias $alias", $null, 0, [IntPtr]::Zero)',
+    'if ($openResult -ne 0) { throw "mci open failed with code $openResult" }',
+    'try {',
+    '  $playResult = [WinMM]::mciSendString("play $alias wait", $null, 0, [IntPtr]::Zero)',
+    '  if ($playResult -ne 0) { throw "mci play failed with code $playResult" }',
+    '} finally {',
+    '  [void][WinMM]::mciSendString("close $alias", $null, 0, [IntPtr]::Zero)',
+    '}',
+  ].join('\r\n');
   const encoded = Buffer.from(script, 'utf16le').toString('base64');
-  await spawnDetached('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded]);
+  await spawnAndWait('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded]);
 }
 
 async function playOnLinux(soundPath: string): Promise<void> {
@@ -159,6 +167,31 @@ function spawnDetached(command: string, args: string[]): Promise<void> {
     child.once('spawn', () => {
       child.unref();
       resolve();
+    });
+  });
+}
+
+function spawnAndWait(command: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = childProcess.spawn(command, args, {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stderr = '';
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+
+    child.once('error', reject);
+    child.once('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      const message = stderr.trim() || `Process exited with code ${code ?? 'unknown'}.`;
+      reject(new Error(message));
     });
   });
 }

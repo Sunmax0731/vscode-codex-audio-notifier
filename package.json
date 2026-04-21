@@ -2,7 +2,7 @@
   "name": "vscode-codex-audio-notifier",
   "displayName": "Codex Audio Notifier",
   "description": "Play a configurable sound and show a toast when Codex finishes a task in VS Code.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "sunmax0731",
   "license": "MIT",
   "repository": {
