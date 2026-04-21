@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { AudioPlayer } from './audioPlayer';
+import { TaskCompletionDeduper, TaskCompletionNotificationKind } from './taskCompletionDeduper';
 
 interface SessionMeta {
   readonly cwd: string | null;
@@ -27,6 +28,7 @@ export class CodexSessionMonitor implements vscode.Disposable {
   private readonly audioPlayer: AudioPlayer;
   private readonly sessionsRoot: string;
   private readonly activationTimeMs: number;
+  private readonly taskCompletionDeduper: TaskCompletionDeduper;
   private readonly states = new Map<string, SessionState>();
   private readonly activeReads = new Set<string>();
   private watcher: fs.FSWatcher | null = null;
@@ -38,6 +40,7 @@ export class CodexSessionMonitor implements vscode.Disposable {
     this.audioPlayer = audioPlayer;
     this.sessionsRoot = path.join(os.homedir(), '.codex', 'sessions');
     this.activationTimeMs = Date.now();
+    this.taskCompletionDeduper = new TaskCompletionDeduper((message) => this.log(message));
   }
 
   public async start(): Promise<void> {
@@ -231,9 +234,31 @@ export class CodexSessionMonitor implements vscode.Disposable {
 
     if (item.type === 'event_msg' && item.payload?.type === 'task_complete') {
       const turnId = typeof item.payload.turn_id === 'string' ? item.payload.turn_id : 'unknown-turn';
-      this.log(`Detected Codex task completion in ${filePath} (${turnId})`);
-      void this.showTaskCompleteToast(state.meta);
-      void this.audioPlayer.play('taskComplete');
+      const eventKey = typeof item.payload.turn_id === 'string' ? `turn:${item.payload.turn_id}` : `line:${line}`;
+      void this.handleTaskComplete(filePath, eventKey, turnId, state.meta);
+    }
+  }
+
+  private async handleTaskComplete(
+    filePath: string,
+    eventKey: string,
+    turnId: string,
+    meta: SessionMeta | null,
+  ): Promise<void> {
+    this.log(`Detected Codex task completion in ${filePath} (${turnId})`);
+
+    if (this.shouldShowToastNotification()) {
+      const claimedToast = await this.tryClaimTaskCompletion(filePath, eventKey, turnId, 'toast');
+      if (claimedToast) {
+        void this.showTaskCompleteToast(meta);
+      }
+    }
+
+    if (this.shouldPlayTaskCompleteAudio()) {
+      const claimedAudio = await this.tryClaimTaskCompletion(filePath, eventKey, turnId, 'audio');
+      if (claimedAudio) {
+        void this.audioPlayer.play('taskComplete');
+      }
     }
   }
 
@@ -249,6 +274,33 @@ export class CodexSessionMonitor implements vscode.Disposable {
     const selection = await vscode.window.showInformationMessage(message, action);
     if (selection === action) {
       this.output.show(true);
+    }
+  }
+
+  private shouldPlayTaskCompleteAudio(): boolean {
+    return vscode.workspace.getConfiguration(CONFIG_SECTION).get<boolean>('enabled', true);
+  }
+
+  private shouldShowToastNotification(): boolean {
+    return vscode.workspace.getConfiguration(CONFIG_SECTION).get<boolean>('showToastNotification', true);
+  }
+
+  private async tryClaimTaskCompletion(
+    filePath: string,
+    eventKey: string,
+    turnId: string,
+    kind: TaskCompletionNotificationKind,
+  ): Promise<boolean> {
+    try {
+      const claimed = await this.taskCompletionDeduper.claim(filePath, eventKey, kind);
+      if (!claimed) {
+        this.log(`Skipped duplicate ${kind} notification for ${filePath} (${turnId})`);
+      }
+      return claimed;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.log(`Task completion ${kind} dedupe failed for ${filePath} (${turnId}): ${message}`);
+      return true;
     }
   }
 
